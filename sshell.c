@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <ctype.h>
 
 #define CMDLINE_MAX 512
 #define ARGS_MAX 16
@@ -22,7 +23,6 @@ typedef struct argParser
     // char* redirectFile;
     char* cmdPtr;
     pid_t pid;
-    bool background;
 
     struct argParser* nextCmd;
 
@@ -33,6 +33,7 @@ struct redirectInfo
     char* redirectFile;
     bool redirect;
     bool isOutputAppend;
+    bool background;
 };
 
 typedef struct job
@@ -236,7 +237,7 @@ void freeArgParser(argParser* args)
             free(args->args[i]);
     }
     // free(args->redirectFile);
-        
+    free(args->cmdPtr);
 }
 
 void print_list(struct argParser * head)
@@ -275,20 +276,57 @@ void push(struct argParser** head, char* argsString)
     }
 }
 
+bool isWordOnlySpaces(char* str)
+{
+    for (size_t i = 0; i < strlen(str); i++)
+    {
+        if (!isspace(str[i]))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 int scanArgs(struct argParser** args, char* argsString)
 {
     char* argcopy = (char*)malloc(CMDLINE_MAX + 1);
     strcpy (argcopy, argsString);
+    
+    int i = 0;
+    int pipeCharCount = 0;
+    while(argsString[i] != '\0')
+    {
+        if (argsString[i] == '|')
+        {
+            pipeCharCount++;
+        }
+        i++;
+    }
+    
+    
     char* token = strtok(argcopy, "|");
+
+    
+
+    
 
     int pipeCount = -1; // Offset of one to account for pipe instead of tokens
     while(token != NULL)
     {
-        pipeCount++;
-        push(args, token);
+        if (!isWordOnlySpaces(token))
+        {
+            pipeCount++;
+            push(args, token);
+        }
         token = strtok(NULL, "|");
     }
     // print_list(args);
+    if (pipeCharCount != pipeCount)
+    {
+        fprintf(stderr, "Error: missing command\n");
+        return -1;
+    }
 
     free(argcopy);
     return pipeCount;
@@ -305,11 +343,22 @@ int checkRedirect(struct redirectInfo* redirectinfo, char* cmd)
         
         // Get the word after the output redirection '>' 
         char* token = strtok(cmd, ">");
+        if (redirectChar < token)
+        {
+            /* Check if the output redirection is the earliest split */
+            fprintf(stderr, "Error: missing command\n");
+            return -1;
+        }
         token = strtok(NULL, ">");
-
-        while (*token != ' ') // To get rid of leading white space if any
-            token++;
         
+        if (token == NULL)
+        {
+            fprintf(stderr, "Error: no output file\n");
+            return -1;
+        }
+        while (*token == ' ') // To get rid of leading white space if any
+            token++;
+
         redirectinfo->redirect = true;
         
         char* fileName;
@@ -369,7 +418,7 @@ int checkOutputAppending(struct redirectInfo* redirectinfo, char* argString)
     return 0;
 }
 
-int checkBackground(argParser* args, char* argsString)
+int checkBackground(struct redirectInfo* redirectionInfo, char* argsString)
 {
     char* backgroundChar = strchr(argsString, '&');
     if(backgroundChar != NULL)
@@ -385,13 +434,13 @@ int checkBackground(argParser* args, char* argsString)
             }
             backgroundChar++;
         }
-        args->background = true;
+        redirectionInfo->background = true;
     }
 
     return 0;
 }
 
-int makeArgs(argParser* args, char* argsString)
+int makeArgs(argParser* args, char* argsString, struct redirectInfo* redirectionInfo)
 {
     // printf("Making Args\n");
     char* argcopy = (char*)malloc(CMDLINE_MAX + 1);
@@ -402,7 +451,7 @@ int makeArgs(argParser* args, char* argsString)
     // {
     //     return -1;
     // }
-    if (checkBackground(args, argcopy))
+    if (checkBackground(redirectionInfo, argcopy))
     {
         return -1;
     }
@@ -454,16 +503,6 @@ int makeArgs(argParser* args, char* argsString)
     return 0;
 }
 
-void backgroundChildHandler()
-{
-    int retval;
-    pid_t pid = waitpid((pid_t)(-1), &retval, WNOHANG);
-    if (pid == 0 || pid == -1)
-        return;
-    else
-        fprintf(stderr, "Child exited with [%d]", WEXITSTATUS(retval));
-}
-
 int findIndexOfPID(pid_t pidOfInterest , pid_t pids[], int numOfElements)
 {
     for(int i = 0; i < numOfElements; i++)
@@ -486,7 +525,7 @@ void printMultipleCompletion(argParser* head, char* cmd, int pid_status[], pid_t
     while (current != NULL)
     {
         int indexOfCurrent = findIndexOfPID(current->pid, pids, numOfElements);
-        fprintf(stderr, "[%i]", pid_status[indexOfCurrent]);
+        fprintf(stderr, "[%i]", WEXITSTATUS(pid_status[indexOfCurrent]));
         current = current->nextCmd;
     }
     fprintf(stderr, "\n");
@@ -499,12 +538,13 @@ void printCompletion(char* cmd, int retval)
 
 void freeList(argParser** head)
 {
-    while(*head !=  NULL)
+    argParser* newHead = *head;
+    while(newHead != NULL)
     {
-        argParser* temp = *head;
-        freeArgParser(temp);
-        *head = (*head)->nextCmd;
-        free(temp);
+        argParser* deleteNode = newHead;
+        newHead = newHead->nextCmd;
+        freeArgParser(deleteNode);
+        free(deleteNode);
     }
 }
 
@@ -523,7 +563,7 @@ void pushJob(job** jobhead, pid_t pid, char* command)
     else
     {
         // Add new job to the back of the list
-        (*jobhead)->next = newJob;
+        // (*jobhead)->next = newJob;
         job* endJob = *jobhead;
         while(endJob->next != NULL)
         {
@@ -543,17 +583,13 @@ job* freeJob(job* jobhead, pid_t pid)
         {
             if(currentJob == jobhead)
             {
-                printf("FREE: %p\n", jobhead);
                 jobhead = jobhead->next;
-                printf("After: %p\n", jobhead);
-                printf("HEAD FREE\n");
                 free(currentJob->command);
                 free(currentJob);
                 break;
             }
             else
             {
-                printf("DOUBLE FREE\n");
                 previousJob->next = currentJob->next;
                 free(currentJob->command);
                 free(currentJob);
@@ -590,11 +626,7 @@ void printBackgroundProcess(job* joblist)
         if (pid == currentJob->pid)
         {
             printCompletion(currentJob->command, WEXITSTATUS(returnValue));
-            // printf("PID[%d], currjob[%d] is returning value[%d]\n", pid, currentJob->pid, returnValue);
-            printf("POINTER: %p\n", joblist);
-            joblist = freeJob(joblist, pid);
-            printf("POINTERAFTER: %p\n", joblist);
-        
+            joblist = freeJob(joblist, currentJob->pid);
         }
             
         currentJob = currentJob->next;
@@ -619,9 +651,25 @@ int main(void)
         redirectionInfo.redirect = false;
         
 
+        // pushJob(&joblist, 0, "First");
+        // pushJob(&joblist, 1, "Second");
+        // pushJob(&joblist, 2, "Third");
+        // printJobList(joblist);
+        // joblist = freeJob(joblist, 0);
+        // printJobList(joblist);
+        // joblist = freeJob(joblist, 2);
+        // printJobList(joblist);
+        
+
+        // return 0;
+
+
         while (1) {
                 char* nl;
                 int retval;
+
+                redirectionInfo.isOutputAppend = false;
+                redirectionInfo.redirect = false;
 
                 /* Print prompt */
                 printf("sshell@ucd$ ");
@@ -644,13 +692,28 @@ int main(void)
                 char* copyCmd = (char*)malloc(sizeof(char) * CMDLINE_MAX);
                 strcpy(copyCmd, cmd);
 
-                if (checkOutputAppending(&redirectionInfo, cmd))
+                if (checkBackground(&redirectionInfo, cmd) || checkOutputAppending(&redirectionInfo, cmd) || checkRedirect(&redirectionInfo, cmd))
+                {
+                    redirectionInfo.redirect = false;
+                    redirectionInfo.isOutputAppend = false;
+                    // head->background = false;
+                    // freeList(&head);
+                    head = NULL;
                     continue;
-                if (checkRedirect(&redirectionInfo, cmd))
-                    continue;
+                }
                 
 
                 int pipe_sign = scanArgs(&head, cmd);
+                if (pipe_sign < 0)
+                {
+                    redirectionInfo.redirect = false;
+                    redirectionInfo.isOutputAppend = false;
+                    // head->background = false;
+                    if (head != NULL)
+                        freeList(&head);
+                    head = NULL;
+                    continue;
+                }
                 // printf("sdgfksdlkfsjd: %s\n", head->cmdPtr);
                 // printf("NULL: %p", NULL);
 
@@ -678,9 +741,14 @@ int main(void)
                     struct argParser* current = head;
                     while (current != NULL)
                     {
-                        if (makeArgs(current, current->cmdPtr))
+                        if (makeArgs(current, current->cmdPtr, &redirectionInfo))
                         {
                             /* Error checking when parsing the arguments*/
+                            redirectionInfo.redirect = false;
+                            redirectionInfo.isOutputAppend = false;
+                            redirectionInfo.background = false;
+                            freeList(&head);
+                            head = NULL;
                             continue;
                         }
                         current = current->nextCmd;
@@ -692,21 +760,31 @@ int main(void)
                     pid_t pids[pipe_sign];
                     for(int i = 0; i < pipe_sign + 1; i++)
                     {
-                        if (head->background)
+                        if (redirectionInfo.background)
                             pids[i] = waitpid(-1, &pid_status[i], WNOHANG);
                         else
                             pids[i] = waitpid(-1, &pid_status[i], 0);
                     }
 
                     printMultipleCompletion(head, copyCmd, pid_status, pids, pipe_sign+1);
-
+                    
+                    redirectionInfo.redirect = false;
+                    redirectionInfo.isOutputAppend = false;
+                    redirectionInfo.background = false;
+                    freeList(&head);
+                    head = NULL;
                 }
                 else if (pipe_sign == 0)
                 {
                     
-                    if (makeArgs(head, head->cmdPtr))
+                    if (makeArgs(head, head->cmdPtr, &redirectionInfo))
                     {
                         /* Error Checking for processing arguments */
+                        redirectionInfo.redirect = false;
+                        redirectionInfo.isOutputAppend = false;
+                        redirectionInfo.background = false;
+                        freeList(&head);
+                        head = NULL;
                         continue;
                     }
 
@@ -715,8 +793,14 @@ int main(void)
                     if (strcmp(head->args[0], "exit") == 0) {
                         fprintf(stderr, "Bye...\n");
                         retval = 0;
+                        if (joblist != NULL)
+                        {
+                            fprintf(stderr, "Error: active jobs still running\n");
+                        }
                         printCompletion(cmd, retval);
-                        break;
+                        
+                        if (joblist == NULL)
+                            exit(0);
                     }
 
                     /* pwd */
@@ -775,9 +859,9 @@ int main(void)
                         {
                             // Parent
 
-                            printJobList(joblist);
+                            // printJobList(joblist);
 
-                            if (head->background)
+                            if (redirectionInfo.background)
                             {
                                 waitpid(pid, &retval, WNOHANG);
                                 pushJob(&joblist, pid, cmd);
@@ -825,8 +909,9 @@ int main(void)
 
                     redirectionInfo.redirect = false;
                     redirectionInfo.isOutputAppend = false;
-                    head->background = false;
+                    redirectionInfo.background = false;
                     freeList(&head);
+                    head = NULL;
                     // /* Regular command */
                     // retval = system(cmd);
                     // fprintf(stdout, "Return status value for '%s': %d\n",
