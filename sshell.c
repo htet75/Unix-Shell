@@ -236,7 +236,7 @@ void freeArgParser(argParser* args)
             free(args->args[i]);
     }
     // free(args->redirectFile);
-        
+    free(args->cmdPtr);
 }
 
 void print_list(struct argParser * head)
@@ -454,16 +454,6 @@ int makeArgs(argParser* args, char* argsString)
     return 0;
 }
 
-void backgroundChildHandler()
-{
-    int retval;
-    pid_t pid = waitpid((pid_t)(-1), &retval, WNOHANG);
-    if (pid == 0 || pid == -1)
-        return;
-    else
-        fprintf(stderr, "Child exited with [%d]", WEXITSTATUS(retval));
-}
-
 int findIndexOfPID(pid_t pidOfInterest , pid_t pids[], int numOfElements)
 {
     for(int i = 0; i < numOfElements; i++)
@@ -499,12 +489,13 @@ void printCompletion(char* cmd, int retval)
 
 void freeList(argParser** head)
 {
-    while(*head !=  NULL)
+    argParser* newHead = *head;
+    while(newHead != NULL)
     {
-        argParser* temp = *head;
-        freeArgParser(temp);
-        *head = (*head)->nextCmd;
-        free(temp);
+        argParser* deleteNode = newHead;
+        newHead = newHead->nextCmd;
+        freeArgParser(deleteNode);
+        free(deleteNode);
     }
 }
 
@@ -523,7 +514,7 @@ void pushJob(job** jobhead, pid_t pid, char* command)
     else
     {
         // Add new job to the back of the list
-        (*jobhead)->next = newJob;
+        // (*jobhead)->next = newJob;
         job* endJob = *jobhead;
         while(endJob->next != NULL)
         {
@@ -543,17 +534,13 @@ job* freeJob(job* jobhead, pid_t pid)
         {
             if(currentJob == jobhead)
             {
-                printf("FREE: %p\n", jobhead);
                 jobhead = jobhead->next;
-                printf("After: %p\n", jobhead);
-                printf("HEAD FREE\n");
                 free(currentJob->command);
                 free(currentJob);
                 break;
             }
             else
             {
-                printf("DOUBLE FREE\n");
                 previousJob->next = currentJob->next;
                 free(currentJob->command);
                 free(currentJob);
@@ -590,11 +577,7 @@ void printBackgroundProcess(job* joblist)
         if (pid == currentJob->pid)
         {
             printCompletion(currentJob->command, WEXITSTATUS(returnValue));
-            // printf("PID[%d], currjob[%d] is returning value[%d]\n", pid, currentJob->pid, returnValue);
-            printf("POINTER: %p\n", joblist);
-            joblist = freeJob(joblist, pid);
-            printf("POINTERAFTER: %p\n", joblist);
-        
+            joblist = freeJob(joblist, currentJob->pid);
         }
             
         currentJob = currentJob->next;
@@ -618,6 +601,19 @@ int main(void)
         redirectionInfo.isOutputAppend = false;
         redirectionInfo.redirect = false;
         
+
+        // pushJob(&joblist, 0, "First");
+        // pushJob(&joblist, 1, "Second");
+        // pushJob(&joblist, 2, "Third");
+        // printJobList(joblist);
+        // joblist = freeJob(joblist, 0);
+        // printJobList(joblist);
+        // joblist = freeJob(joblist, 2);
+        // printJobList(joblist);
+        
+
+        // return 0;
+
 
         while (1) {
                 char* nl;
@@ -644,10 +640,14 @@ int main(void)
                 char* copyCmd = (char*)malloc(sizeof(char) * CMDLINE_MAX);
                 strcpy(copyCmd, cmd);
 
-                if (checkOutputAppending(&redirectionInfo, cmd))
-                    continue;
-                if (checkRedirect(&redirectionInfo, cmd))
-                    continue;
+                if (checkOutputAppending(&redirectionInfo, cmd) || checkRedirect(&redirectionInfo, cmd))
+                {
+                    redirectionInfo.redirect = false;
+                    redirectionInfo.isOutputAppend = false;
+                    head->background = false;
+                    freeList(&head);
+                    head = NULL;
+                }
                 
 
                 int pipe_sign = scanArgs(&head, cmd);
@@ -681,6 +681,11 @@ int main(void)
                         if (makeArgs(current, current->cmdPtr))
                         {
                             /* Error checking when parsing the arguments*/
+                            redirectionInfo.redirect = false;
+                            redirectionInfo.isOutputAppend = false;
+                            head->background = false;
+                            freeList(&head);
+                            head = NULL;
                             continue;
                         }
                         current = current->nextCmd;
@@ -699,7 +704,12 @@ int main(void)
                     }
 
                     printMultipleCompletion(head, copyCmd, pid_status, pids, pipe_sign+1);
-
+                    
+                    redirectionInfo.redirect = false;
+                    redirectionInfo.isOutputAppend = false;
+                    head->background = false;
+                    freeList(&head);
+                    head = NULL;
                 }
                 else if (pipe_sign == 0)
                 {
@@ -707,6 +717,11 @@ int main(void)
                     if (makeArgs(head, head->cmdPtr))
                     {
                         /* Error Checking for processing arguments */
+                        redirectionInfo.redirect = false;
+                        redirectionInfo.isOutputAppend = false;
+                        head->background = false;
+                        freeList(&head);
+                        head = NULL;
                         continue;
                     }
 
@@ -716,7 +731,7 @@ int main(void)
                         fprintf(stderr, "Bye...\n");
                         retval = 0;
                         printCompletion(cmd, retval);
-                        break;
+                        exit(0);
                     }
 
                     /* pwd */
@@ -775,7 +790,7 @@ int main(void)
                         {
                             // Parent
 
-                            printJobList(joblist);
+                            // printJobList(joblist);
 
                             if (head->background)
                             {
@@ -827,6 +842,7 @@ int main(void)
                     redirectionInfo.isOutputAppend = false;
                     head->background = false;
                     freeList(&head);
+                    head = NULL;
                     // /* Regular command */
                     // retval = system(cmd);
                     // fprintf(stdout, "Return status value for '%s': %d\n",
