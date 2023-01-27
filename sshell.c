@@ -300,11 +300,11 @@ int checkRedirect(struct redirectInfo* redirectinfo, char* cmd)
     char* redirectChar = strchr(cmd, '>');      // redirectChar = string after '>' from token
     if (redirectChar != NULL)               // if there is an existing token after '>' 
     {
-        char* cmdCopy = (char*)malloc(sizeof(char) * CMDLINE_MAX);
-        strcpy(cmdCopy, cmd);
+        // char* cmdCopy = (char*)malloc(sizeof(char) * CMDLINE_MAX);
+        // strcpy(cmdCopy, cmd);
         
         // Get the word after the output redirection '>' 
-        char* token = strtok(cmdCopy, ">");
+        char* token = strtok(cmd, ">");
         token = strtok(NULL, ">");
 
         while (*token != ' ') // To get rid of leading white space if any
@@ -322,7 +322,7 @@ int checkRedirect(struct redirectInfo* redirectinfo, char* cmd)
             fprintf(stderr, "Error: mislocated output redirection\n");
             return -1;
         }
-        free(cmdCopy);
+        // free(cmdCopy);
     }
 
 
@@ -572,7 +572,8 @@ int main(void)
         struct argParser* head = NULL;
         struct redirectInfo redirectionInfo;
         redirectionInfo.redirectFile = (char*)malloc(sizeof(char) * CMDLINE_MAX);
-
+        redirectionInfo.isOutputAppend = false;
+        redirectionInfo.redirect = false;
         
 
         while (1) {
@@ -597,8 +598,8 @@ int main(void)
                 if (nl)
                     *nl = '\0';
 
-                
-
+                char* copyCmd = (char*)malloc(sizeof(char) * CMDLINE_MAX);
+                strcpy(copyCmd, cmd);
 
                 if (checkOutputAppending(&redirectionInfo, cmd))
                     continue;
@@ -654,7 +655,7 @@ int main(void)
                             pids[i] = waitpid(-1, &pid_status[i], 0);
                     }
 
-                    printMultipleCompletion(head, cmd, pid_status, pids, pipe_sign+1);
+                    printMultipleCompletion(head, copyCmd, pid_status, pids, pipe_sign+1);
 
                 }
                 else if (pipe_sign == 0)
@@ -689,11 +690,9 @@ int main(void)
                             free(cwd);
                         }
                         // fprintf(stderr, "+ completed %s [%i]\n", cmd, retval);
-                        printCompletion(cmd, retval);
-                        continue;
+                        printCompletion(copyCmd, retval);
                     }
-
-                    if (strcmp(head->args[0], "cd") == 0)
+                    else if (strcmp(head->args[0], "cd") == 0)
                     {
                         retval = chdir(head->args[1]);
                         if (retval)
@@ -702,8 +701,60 @@ int main(void)
                             fprintf(stderr, "Error: cannot cd into directory\n");
                         }
 
-                        printCompletion(cmd, retval);
-                        continue;
+                        printCompletion(copyCmd, retval);
+                    }
+                    else
+                    {
+                        pid_t pid = fork();
+                    
+                        if (pid == 0)
+                        {
+                            // Child
+                            if (redirectionInfo.redirect)
+                            {
+                                // printf("REDIRECTING\n");
+                                int fd;
+                                if (redirectionInfo.isOutputAppend)
+                                    fd = open(redirectionInfo.redirectFile, O_WRONLY | O_CREAT | O_APPEND, 0644);
+                                else
+                                    fd = open(redirectionInfo.redirectFile, O_WRONLY | O_CREAT | O_TRUNC, 0644);   
+                                //0644 file permissions; readable by all the user groups, but writable by the user only
+                                dup2(fd, STDOUT_FILENO);
+                                close(fd);
+                            }
+
+                            retval = execvp(head->args[0], head->args);
+                            fprintf(stderr, "Error: command not found\n");
+                            
+                            exit(retval);
+                        }
+                        else if (pid > 0)
+                        {
+                            // Parent
+                            if (head->background)
+                            {
+                                waitpid(pid, &retval, WNOHANG);
+                                pushJob(&joblist, pid, cmd);
+                                // printf("Added to job list\n");
+                            }
+                            else
+                                waitpid(pid, &retval, 0);
+                            
+                            if (!WIFEXITED(retval))
+                            {
+                                printf("Error: child failed to exit\n");
+                            }
+                            // fprintf(stderr, "+ completed %s [%i]\n", cmd, retval);
+                            
+
+                            
+                            printCompletion(copyCmd, WEXITSTATUS(retval));
+                        }
+                        else
+                        {
+                            perror("Error: unable to spawn child\n");
+                            exit(1);
+                        }
                     }
                     
 
@@ -717,55 +768,6 @@ int main(void)
                     // }
                     // printf("File Name: %s\n", args.redirectFile);
                     // printf("====================\n");
-
-                    pid_t pid = fork();
-                    
-                    if (pid == 0)
-                    {
-                        // Child
-                        if (redirectionInfo.redirect)
-                        {
-                            // printf("REDIRECTING\n");
-                            int fd;
-                            if (redirectionInfo.isOutputAppend)
-                                fd = open(redirectionInfo.redirectFile, O_WRONLY | O_CREAT | O_APPEND, 0644);
-                            else
-                                fd = open(redirectionInfo.redirectFile, O_WRONLY | O_CREAT | O_TRUNC, 0644);   
-                            //0644 file permissions; readable by all the user groups, but writable by the user only
-                            dup2(fd, STDOUT_FILENO);
-                            close(fd);
-                        }
-
-                        retval = execvp(head->args[0], head->args);
-                        fprintf(stderr, "Error: command not found\n");
-                        
-                        exit(retval);
-                    }
-                    else if (pid > 0)
-                    {
-                        // Parent
-                        if (head->background)
-                        {
-                            waitpid(pid, &retval, WNOHANG);
-                            pushJob(&joblist, pid, cmd);
-                        }
-                        else
-                            waitpid(pid, &retval, 0);
-                        if (!WIFEXITED(retval))
-                        {
-                            printf("Error: child failed to exit\n");
-                        }
-                        // fprintf(stderr, "+ completed %s [%i]\n", cmd, retval);
-                        
-
-                        
-                        printCompletion(cmd, WEXITSTATUS(retval));
-                    }
-                    else
-                    {
-                        perror("Error: unable to spawn child\n");
-                        exit(1);
-                    }
 
                     redirectionInfo.redirect = false;
                     redirectionInfo.isOutputAppend = false;
