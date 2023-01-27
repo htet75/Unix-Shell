@@ -533,31 +533,73 @@ void pushJob(job** jobhead, pid_t pid, char* command)
     }
 }
 
-void freeJob(job** jobhead, pid_t pid)
+job* freeJob(job* jobhead, pid_t pid)
 {
-    job* previousJob = *jobhead;
-    job* currentJob = *jobhead;
+    job* previousJob = jobhead;
+    job* currentJob = jobhead;
     while(currentJob != NULL)
     {
         if(currentJob->pid == pid)
         {
-            if(currentJob == *jobhead)
+            if(currentJob == jobhead)
             {
-                *jobhead = (*jobhead)->next;
+                printf("FREE: %p\n", jobhead);
+                jobhead = jobhead->next;
+                printf("After: %p\n", jobhead);
+                printf("HEAD FREE\n");
                 free(currentJob->command);
                 free(currentJob);
+                break;
             }
             else
             {
+                printf("DOUBLE FREE\n");
                 previousJob->next = currentJob->next;
                 free(currentJob->command);
                 free(currentJob);
+                break;
             }
                 
         }
+        else
+        {
+            previousJob = currentJob;
+            currentJob = currentJob->next;
+        }
+    }
+    return jobhead;
+}
+
+void printJobList(job* joblist)
+{
+    job* currentJob = joblist;
+    while (currentJob != NULL)
+    {
+        printf("PID: %d\nCMD: %s\n----->\n", currentJob->pid, currentJob->command);
+        currentJob = currentJob->next;
     }
 }
 
+void printBackgroundProcess(job* joblist)
+{
+    job* currentJob = joblist;
+    while (currentJob != NULL)
+    {
+        int returnValue;
+        pid_t pid = waitpid(currentJob->pid, &returnValue, WNOHANG);                                
+        if (pid == currentJob->pid)
+        {
+            printCompletion(currentJob->command, WEXITSTATUS(returnValue));
+            // printf("PID[%d], currjob[%d] is returning value[%d]\n", pid, currentJob->pid, returnValue);
+            printf("POINTER: %p\n", joblist);
+            joblist = freeJob(joblist, pid);
+            printf("POINTERAFTER: %p\n", joblist);
+        
+        }
+            
+        currentJob = currentJob->next;
+    } 
+}
 
 int main(void)
 {
@@ -733,29 +775,14 @@ int main(void)
                         {
                             // Parent
 
-                            job* currentJob = joblist;
-                            while (currentJob != NULL)
-                            {
-                                int returnValue;
-                                pid_t pid = waitpid(currentJob->pid, &returnValue, WNOHANG);                                
-                                if(pid == -1)
-                                {
-                                    fprintf(stderr, "Error: child didn't exit properly\n");
-                                }
-                                else if (pid == currentJob->pid)
-                                {
-                                    printCompletion(currentJob->command, WEXITSTATUS(returnValue));
-                                    // printf("PID[%d], currjob[%d] is returning value[%d]\n", pid, currentJob->pid, returnValue);
-                                    freeJob(&joblist, pid);
-                                }
-                                    
-                                currentJob = currentJob->next;
-                            } 
+                            printJobList(joblist);
 
                             if (head->background)
                             {
                                 waitpid(pid, &retval, WNOHANG);
                                 pushJob(&joblist, pid, cmd);
+                                printBackgroundProcess(joblist);
+                                
                                 // printf("Added to job list\n");
                             }
                             else
@@ -765,6 +792,7 @@ int main(void)
                                 {
                                     printf("Error: child failed to exit\n");
                                 }
+                                printBackgroundProcess(joblist);
                                 printCompletion(copyCmd, WEXITSTATUS(retval));
                             }
                                 
