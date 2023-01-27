@@ -5,6 +5,7 @@
 #include <sys/wait.h>
 #include <stdbool.h>
 #include <fcntl.h>
+#include <errno.h>
 
 #define CMDLINE_MAX 512
 #define ARGS_MAX 16
@@ -22,11 +23,18 @@ typedef struct argParser
     char* redirectFile;
     char* cmdPtr;
     pid_t pid;
+    bool background;
 
     struct argParser* nextCmd;
 
 } argParser;
 
+typedef struct job
+{
+    struct job *next;
+    char *command;
+    pid_t pid;
+} job;
 
 void pipeRedirect(int pipefd, int redirectfd)
 {
@@ -431,7 +439,20 @@ int makeArgs(argParser* args, char* argsString)
                 }
             }
 
-            strncpy(args->args[i++], token, TOKEN_MAX);
+           if(strchr(token, '&') != NULL)
+            {
+                char * newtoken = strtok(token, "&");
+                args->background = true;
+                if(newtoken != NULL)
+                {
+                    strncpy(args->args[i++], newtoken, TOKEN_MAX);
+                }
+            }
+            else
+            {
+                strncpy(args->args[i++], token, TOKEN_MAX);
+            }
+            // strncpy(args->args[i++], token, TOKEN_MAX);
         }
         else
         {
@@ -451,6 +472,25 @@ int makeArgs(argParser* args, char* argsString)
     free(argcopy);
 
     return 0;
+}
+
+void zombie_hunter()
+{
+    int pid, status, serrno;
+    serrno = errno;
+    while(1)
+    {
+        pid = waitpid( WAIT_ANY, &status, WNOHANG);
+        if(pid < 0)
+        {
+            perror("waitpid");
+            break;
+        }
+        if(pid == 0)
+            break;
+        printf("Child %d terminated with status [%d]\n", pid, WEXITSTATUS(status));
+    }
+    errno = serrno;
 }
 
 void printCompletion(char* cmd, int retval)
