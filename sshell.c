@@ -254,12 +254,11 @@ int main(void)
 
                 struct argParser * head = NULL;
 
-                int numCmd = scanArgs(&head, cmd);
-                bool for_loop = true;
+                int pipe_sign = scanArgs(&head, cmd);
 
-                if(numCmd > 0 && for_loop)
+                if(pipe_sign > 0)
                 {
-                    printf("Number of commands:%d\n", numCmd);
+                    printf("Number of commands:%d\n", pipe_sign);
                     if(makeArgs(&parse1, head->cmdPtr))
                     {
                         continue;
@@ -270,7 +269,7 @@ int main(void)
                         continue;
                     }
                     printf("Command2: %s\n", parse2.args[0]);
-                    if(numCmd == 2)
+                    if(pipe_sign == 2)
                     {
                         if(makeArgs(&args, head->nextCmd->nextCmd->cmdPtr))
                         {
@@ -280,7 +279,7 @@ int main(void)
                     }
                 }
 
-                if(numCmd > 0 && numCmd == 2)
+                if(pipe_sign == 2)
                 {
                     // parse1 = command1; parse2 = command2; args = command3;
 
@@ -345,10 +344,10 @@ int main(void)
                         waitpid(pid[i], &status, 0);
                         printf("Child %d exited with status [%d]\n", i, pid_status[i]);
                     }
-                    printCompletion(cmd, pid_status[3]);
+                    printCompletion(cmd, pid_status[0]);
                 }
                 
-                if(numCmd > 0 && !for_loop)
+                if(pipe_sign == 1)
                 {
                     int fd[2];
                     if(pipe(fd) < 0)
@@ -408,7 +407,7 @@ int main(void)
                         }
                     }
                 }
-                if(numCmd == 0)
+                if(pipe_sign == 0)
                 {
                     if (makeArgs(&args, cmd))
                     {
