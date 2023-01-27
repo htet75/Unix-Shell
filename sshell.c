@@ -558,6 +558,7 @@ void freeJob(job** jobhead, pid_t pid)
     }
 }
 
+
 int main(void)
 {
         char cmd[CMDLINE_MAX];
@@ -731,6 +732,26 @@ int main(void)
                         else if (pid > 0)
                         {
                             // Parent
+
+                            job* currentJob = joblist;
+                            while (currentJob != NULL)
+                            {
+                                int returnValue;
+                                pid_t pid = waitpid(currentJob->pid, &returnValue, WNOHANG);                                
+                                if(pid == -1)
+                                {
+                                    fprintf(stderr, "Error: child didn't exit properly\n");
+                                }
+                                else if (pid == currentJob->pid)
+                                {
+                                    printCompletion(currentJob->command, WEXITSTATUS(returnValue));
+                                    // printf("PID[%d], currjob[%d] is returning value[%d]\n", pid, currentJob->pid, returnValue);
+                                    freeJob(&joblist, pid);
+                                }
+                                    
+                                currentJob = currentJob->next;
+                            } 
+
                             if (head->background)
                             {
                                 waitpid(pid, &retval, WNOHANG);
@@ -738,17 +759,22 @@ int main(void)
                                 // printf("Added to job list\n");
                             }
                             else
-                                waitpid(pid, &retval, 0);
-                            
-                            if (!WIFEXITED(retval))
                             {
-                                printf("Error: child failed to exit\n");
+                                waitpid(pid, &retval, 0);
+                                if (!WIFEXITED(retval))
+                                {
+                                    printf("Error: child failed to exit\n");
+                                }
+                                printCompletion(copyCmd, WEXITSTATUS(retval));
                             }
+                                
+                            
+                            
                             // fprintf(stderr, "+ completed %s [%i]\n", cmd, retval);
                             
 
                             
-                            printCompletion(copyCmd, WEXITSTATUS(retval));
+                            
                         }
                         else
                         {
