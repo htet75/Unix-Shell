@@ -17,7 +17,6 @@
 typedef struct argParser
 {
     char* args[ARGS_MAX + 1];
-    char* original;
     bool redirect;
     bool isOutputAppend;
     char* redirectFile;
@@ -73,70 +72,6 @@ void executePipeChain(argParser* head, int numPipeCommands)
         pipe(pipes[i]);
     }
 
-    // int fd_1t2[2], fd_2t3[2];
-    // pipe(fd_1t2); pipe(fd_2t3);
-    
-    // pid_t pid[3];
-
-    // for(int i = 0; i < numPipeCommands; i++)
-    // {
-    //     pid[i] = fork();
-    //     if (pid[i] == 0)
-    //     {
-    //         if (i == 0)
-    //         {
-    //             /* Child 1 for command 1 to command 2 */
-    //             dup2(fd_1t2[1], STDOUT_FILENO);
-    //             for(int i = 0; i < 2; i++)
-    //             {
-    //                 close(fd_1t2[i]);
-    //                 close(fd_2t3[i]);
-    //             }
-    //             execvp(head->args[0], head->args);
-    //             fprintf(stderr, "Command1 not found\n");
-    //             exit(0);
-    //         }
-    //         else if (i == 1)
-    //         {
-    //             dup2(fd_1t2[0], STDIN_FILENO);         //command 2 reads from command 1
-    //             dup2(fd_2t3[1], STDOUT_FILENO);        //command 2 writes to command 3
-    //             for(int i = 0; i < 2; i++)
-    //             {
-    //                 close(fd_1t2[i]);
-    //                 close(fd_2t3[i]);
-    //             }
-    //             execvp(head->nextCmd->args[0], head->nextCmd->args);
-    //             fprintf(stderr, "Command2 not found\n");
-    //             exit(0);
-    //         }
-    //         else if (i == 2)
-    //         {
-    //             dup2(fd_2t3[0], STDIN_FILENO);      //command3 reads from command 2
-    //             for(int i = 0; i < 2; i++)
-    //             {
-    //                 close(fd_1t2[i]);
-    //                 close(fd_2t3[i]);
-    //             }
-    //             execvp(head->nextCmd->nextCmd->args[0], head->nextCmd->nextCmd->args);
-    //             fprintf(stderr, "Command3 not found\n");
-    //             exit(0);
-    //         }
-    //         else
-    //             printf("ERROR\n");
-            
-    //     }
-    // }
-
-
-    // for(int i = 0; i < 2; i++)
-    // {
-    //     close(fd_1t2[i]);
-    //     close(fd_2t3[i]);
-    // }
-
-
-
-
     for(int i = 0; i < numPipeCommands; i++)
     {
         current->pid = fork();
@@ -171,8 +106,8 @@ void executePipeChain(argParser* head, int numPipeCommands)
             }
             else
             {
-                dup2(pipes[0][0], STDIN_FILENO);         //command 2 reads from command 1
-                dup2(pipes[1][1], STDOUT_FILENO);        //command 2 writes to command 3
+                dup2(pipes[i-1][0], STDIN_FILENO);         //command 2 reads from command 1
+                dup2(pipes[i][1], STDOUT_FILENO);        //command 2 writes to command 3
                 for(int i = 0; i < numPipeCommands - 1; i++)
                 {
                     close(pipes[0][i]);
@@ -302,15 +237,19 @@ void push(struct argParser** head, char* argsString)
 {
     /* Push to end of the list */
     struct argParser* new_node = malloc(sizeof(struct argParser));
-    new_node->cmdPtr = argsString;
+    new_node->cmdPtr = (char*)malloc(sizeof(char)*CMDLINE_MAX);
+    strcpy(new_node->cmdPtr,argsString);
     new_node->nextCmd = NULL;
+    initArgParser(new_node);
     
     if(*head == NULL)
     {
+        printf("Making new node\n");
         *head = new_node;
     }
     else
     {
+        printf("Adding node\n");
         struct argParser* end_node = *head;
         while(end_node->nextCmd != NULL)
         {
@@ -334,26 +273,103 @@ int scanArgs(struct argParser** args, char* argsString)
         token = strtok(NULL, "|");
     }
     // print_list(args);
-    
+
+    free(argcopy);
     return pipeCount;
 }
 
-void checkOutputAppending(argParser* args, char* argString)
+int checkRedirect(argParser* args, char* cmd)
+{
+    char* redirectChar = strchr(cmd, '>');      // redirectChar = string after '>' from token
+    if (redirectChar != NULL)               // if there is an existing token after '>' 
+    {
+        char* cmdCopy = (char*)malloc(sizeof(char) * CMDLINE_MAX);
+        strcpy(cmdCopy, cmd);
+        
+        // Get the word after the output redirection '>' 
+        char* token = strtok(cmd, ">");
+        token = strtok(NULL, ">");
+
+        while (*token != ' ') // To get rid of leading white space if any
+            token++;
+        
+        args->redirect = true;
+        
+        char* fileName;
+        fileName = strtok(token, " ");
+        strncpy(args->redirectFile, fileName, TOKEN_MAX);
+
+        token = strtok(NULL, " ");
+        if (token != NULL)
+        {
+            fprintf(stderr, "Error: mislocated output redirection\n");
+            return -1;
+        }
+        free(cmdCopy);
+    }
+
+    return 0;
+}
+
+int checkOutputAppending(argParser* args, char* argString)
 {
     char* outputAppendPosition = strstr(argString, ">>");
     
     if (outputAppendPosition == NULL)
         /* Didn't find output appending */
-        return;
+        return 0;
     
     *(outputAppendPosition++) = '\0';
     *(outputAppendPosition++) = '\0';
     
+    // while (*outputAppendPosition == '\0')
+    // {
+    //     if (*outputAppendPosition != ' ')
+    //     {
+    //         fprintf(stderr, "Error: mislocated output redirection\n");
+    //         return -1;
+    //     }
+    //     outputAppendPosition++;
+    // }
     while (*outputAppendPosition == ' ')
         outputAppendPosition++;
+
+    /* Check to see if there are any more tokens after the file name*/
+    char* token = strtok(outputAppendPosition, " ");
+    token = strtok(NULL, " ");
+    if (token != NULL)
+    {
+        fprintf(stderr, "Error: mislocated output redirection\n");
+        return -1;
+    }
+
     args->redirect = true;
     args->isOutputAppend = true;
     strcpy(args->redirectFile, outputAppendPosition);
+
+    return 0;
+}
+
+int checkBackground(argParser* args, char* argsString)
+{
+    char* backgroundChar = strchr(argsString, '&');
+    if(backgroundChar != NULL)
+    {   
+        *backgroundChar = ' '; // Get rid of the & in argument string
+        backgroundChar++;
+        while(*backgroundChar != '\0')
+        {
+            if (*(backgroundChar) != ' ')
+            {
+                fprintf(stderr, "Error: mislocated background sign\n");
+                return -1;
+            }
+            backgroundChar++;
+        }
+        args->background = true;
+    }
+
+    return 0;
 }
 
 int makeArgs(argParser* args, char* argsString)
@@ -363,7 +379,14 @@ int makeArgs(argParser* args, char* argsString)
     
     strcpy(argcopy, argsString);
 
-    checkOutputAppending(args, argcopy);
+    if (checkOutputAppending(args, argcopy))
+    {
+        return -1;
+    }
+    if (checkBackground(args, argcopy))
+    {
+        return -1;
+    }
 
     // char* space;
     int i = 0;
@@ -374,56 +397,6 @@ int makeArgs(argParser* args, char* argsString)
     
     
     while(token != NULL){
-        // printf("Token: %s\n", token);
-        redirectChar = strchr(token, '>');      // redirectChar = string after '>' from token
-        if (redirectChar != NULL)               // if there is an existing token after '>' 
-        {
-            args->redirect = true;  
-            // char* fileName = (char*)malloc(TOKEN_MAX + 1);
-            char* fileName;
-            if (strlen(token) == 1)
-            {
-                /* Redirect char by itself*/
-                fileName = strtok(NULL, " ");
-                strncpy(args->redirectFile, fileName, TOKEN_MAX);
-                token = strtok(NULL, " ");
-                continue;
-            }
-            else if (*(redirectChar + 1) == '\0')
-            {
-                /* Redirect Char at end of word */
-                *redirectChar = '\0';
-                fileName = strtok(NULL, " ");
-                strncpy(args->redirectFile, fileName, TOKEN_MAX);
-            }
-            else if (redirectChar == token)
-            {
-                /* Redirect Char at beginning of word */
-                token = token + 1;
-                strncpy(args->redirectFile, token, TOKEN_MAX);
-                token = strtok(NULL, " ");
-                continue;
-            }
-            else 
-            {
-                /* Redirect Char in middle of word */
-                *redirectChar = '\0';
-                redirectChar++;
-                // if (args->args[i] == NULL)
-                // {
-                //     /* Malloc if needed */
-                //     args->args[i] = (char*)malloc(TOKEN_MAX + 1);
-                //     if (!args->args[i])
-                //     {
-                //         perror("Error: Memory not available");
-                //         exit(1);
-                //     }
-                // }
-                // strncpy(args->args[i++], token, TOKEN_MAX);
-                strncpy(args->redirectFile, redirectChar, TOKEN_MAX);
-            }
-        }
-
 
         if (i < ARGS_MAX)
         {
@@ -439,20 +412,8 @@ int makeArgs(argParser* args, char* argsString)
                 }
             }
 
-           if(strchr(token, '&') != NULL)
-            {
-                char * newtoken = strtok(token, "&");
-                args->background = true;
-                if(newtoken != NULL)
-                {
-                    strncpy(args->args[i++], newtoken, TOKEN_MAX);
-                }
-            }
-            else
-            {
-                strncpy(args->args[i++], token, TOKEN_MAX);
-            }
-            // strncpy(args->args[i++], token, TOKEN_MAX);
+           
+            strncpy(args->args[i++], token, TOKEN_MAX);
         }
         else
         {
@@ -474,28 +435,55 @@ int makeArgs(argParser* args, char* argsString)
     return 0;
 }
 
-void zombie_hunter()
+void backgroundChildHandler()
 {
-    int pid, status, serrno;
-    serrno = errno;
-    while(1)
+    int saved_errno = errno;
+    while (waitpid((pid_t)(-1), 0, WNOHANG) > 0) {}
+    errno = saved_errno;
+}
+
+int findIndexOfPID(pid_t pidOfInterest , pid_t pids[], int numOfElements)
+{
+    for(int i = 0; i < numOfElements; i++)
     {
-        pid = waitpid( WAIT_ANY, &status, WNOHANG);
-        if(pid < 0)
-        {
-            perror("waitpid");
-            break;
-        }
-        if(pid == 0)
-            break;
-        printf("Child %d terminated with status [%d]\n", pid, WEXITSTATUS(status));
+        if (pidOfInterest == pids[i])
+            return i;
     }
-    errno = serrno;
+
+    return -1;
+}
+
+void printMultipleCompletion(argParser* head, char* cmd, int pid_status[], pid_t pids[], int numOfElements)
+{
+    argParser* current = head;
+    fprintf(stderr, "+ completed '%s' ", cmd);
+    // for (int i = 0; i < numOfElements + 1; i++)
+    // {
+    //     fprintf(stderr, "[%i]", WEXITSTATUS(pid_status[i]));
+    // }
+    while (current != NULL)
+    {
+        int indexOfCurrent = findIndexOfPID(current->pid, pids, numOfElements);
+        fprintf(stderr, "[%i]", pid_status[indexOfCurrent]);
+        current = current->nextCmd;
+    }
+    fprintf(stderr, "\n");
 }
 
 void printCompletion(char* cmd, int retval)
 {
     fprintf(stderr, "+ completed '%s' [%i]\n", cmd, retval);
+}
+
+void freeList(argParser** head)
+{
+    while(*head !=  NULL)
+    {
+        argParser* temp = *head;
+        freeArgParser(temp);
+        *head = (*head)->nextCmd;
+        free(temp);
+    }
 }
 
 int main(void)
@@ -504,14 +492,23 @@ int main(void)
 
         /* Create arguments array with maximum possible values */
         // char* args[ARGS_MAX + 1];
-        argParser args;
-        initArgParser(&args);
+        // argParser args;
+        // initArgParser(&args);
+        struct argParser* head = NULL;
 
-        argParser parse1;
-        initArgParser(&parse1);
+        // Signal handler setup for SIGCHLD
+        struct sigaction sa;
+        
+        sa.sa_handler = &backgroundChildHandler;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = 0;
+        if(sigaction(SIGCHLD, &sa, 0) == -1)
+        {
+            perror(0);
+            exit(1);
+        }
 
-        argParser parse2;
-        initArgParser(&parse2);
+
 
         while (1) {
                 char* nl;
@@ -535,10 +532,12 @@ int main(void)
                 if (nl)
                     *nl = '\0';
 
-                args.original = cmd;
+                
 
-                struct argParser* head = NULL;
+                checkRedirect(head, )
+
                 int pipe_sign = scanArgs(&head, cmd);
+                // printf("sdgfksdlkfsjd: %s\n", head->cmdPtr);
                 // printf("NULL: %p", NULL);
 
                 // struct argParser* current = head;
@@ -573,159 +572,33 @@ int main(void)
                         current = current->nextCmd;
                     }
                     
-                    // if(makeArgs(&parse1, head->cmdPtr))
-                    // {
-                    //     /*Error checking*/
-                    //     continue;
-                    // }
-                    // // printf("Command1: %s\n", parse1.args[0]);
-                    // if(makeArgs(&parse2, head->nextCmd->cmdPtr))
-                    // {
-                    //     continue;
-                    // }
-                    // printf("Command2: %s\n", parse2.args[0]);
-                    // if(pipe_sign == 2)
-                    // {
-                    //     if(makeArgs(&args, head->nextCmd->nextCmd->cmdPtr))
-                    //     {
-                    //         continue;
-                    //     }
-                    //     // printf("Command3: %s\n", args.args[0]);
-                    // }
-                }
-
-                if(pipe_sign == 2)
-                {
-                    // parse1 = command1; parse2 = command2; args = command3;
-
-                    // int fd_1t2[2], fd_2t3[2];
-                    // pipe(fd_1t2); pipe(fd_2t3);
-
-                    // pid_t pid[3];
+                    executePipeChain(head, pipe_sign + 1);
                     
-                    
-                    
-                    // pid[0] = fork();
-                    // if(pid[0] == 0)
-                    // {
-                    //     /* Child 1 for command 1 to command 2 */
-                    //     dup2(fd_1t2[1], STDOUT_FILENO);
-                    //     for(int i = 0; i < 2; i++)
-                    //     {
-                    //         close(fd_1t2[i]);
-                    //         close(fd_2t3[i]);
-                    //     }
-                    //     execvp(head->args[0], head->args);
-                    //     fprintf(stderr, "Command1 not found\n");
-                    //     exit(0);
-                    // }
-                    // pid[1] = fork();
-                    // if(pid[1] == 0)     //child 2 for command 2 to 3
-                    // {
-                    //     dup2(fd_1t2[0], STDIN_FILENO);         //command 2 reads from command 1
-                    //     dup2(fd_2t3[1], STDOUT_FILENO);        //command 2 writes to command 3
-                    //     for(int i = 0; i < 2; i++)
-                    //     {
-                    //         close(fd_1t2[i]);
-                    //         close(fd_2t3[i]);
-                    //     }
-                    //     execvp(head->nextCmd->args[0], head->nextCmd->args);
-                    //     fprintf(stderr, "Command2 not found\n");
-                    //     exit(0);
-                    // }
-                    // pid[2] = fork();
-                    // if(pid[2] == 0)
-                    // {
-                    //     dup2(fd_2t3[0], STDIN_FILENO);      //command3 reads from command 2
-                    //     for(int i = 0; i < 2; i++)
-                    //     {
-                    //         close(fd_1t2[i]);
-                    //         close(fd_2t3[i]);
-                    //     }
-                    //     execvp(head->nextCmd->nextCmd->args[0], head->nextCmd->nextCmd->args);
-                    //     fprintf(stderr, "Command3 not found\n");
-                    //     exit(0);
-                    // }
-                    // for(int i = 0; i < 2; i++)
-                    // {
-                    //     close(fd_1t2[i]);
-                    //     close(fd_2t3[i]);
-                    // }
-                    
-                    int pid_status[3];
-                    for(int i = 0; i < 3; i++)
+                    int pid_status[pipe_sign];
+                    pid_t pids[pipe_sign];
+                    for(int i = 0; i < pipe_sign + 1; i++)
                     {
-                        pid_status[i] = 0;
+                        if (head->background)
+                            pids[i] = waitpid(-1, &pid_status[i], WNOHANG);
+                        else
+                            pids[i] = waitpid(-1, &pid_status[i], 0);
                     }
 
+                    printMultipleCompletion(head, cmd, pid_status, pids, pipe_sign+1);
 
-                    executePipeChain(head, 3);
-                    waitpid(-1, &pid_status[0], 0);
-                    waitpid(-1, &pid_status[1], 0);
-                    waitpid(-1, &pid_status[2], 0);
-
-                    // waitpid(head->pid, &pid_status[0], 0);
-                    // waitpid(head->nextCmd->pid, &pid_status[1], 0);
-                    // waitpid(head->nextCmd->nextCmd->pid, &pid_status[2], 0);
-                    // for (int i = 0; i < pipe_sign + 1; i++)
-                    // {
-                    //     waitpid(pid[i], &pid_status[i], 0);
-                    // }
-                    // bool isChildSuccess = true;
-                    // for (int i = 0; i < pipe_sign + 1; i++)
-                    // {
-                    //     if (!WIFEXITED(pid_status[i]))
-                    //     {
-                    //         /* Child exited unsuccessfully */
-                    //         fprintf(stderr, "Child[%d] exited unsuccessful\n", i);
-                    //         isChildSuccess = false;
-                    //     }
-                    // }
+                }
+                else if (pipe_sign == 0)
+                {
                     
-                    // if (!isChildSuccess)
-                    //     continue;
-                        
-
-                    fprintf(stderr, "+ completed '%s' ", cmd);
-                    for (int i = 0; i < pipe_sign + 1; i++)
-                    {
-                        fprintf(stderr, "[%i]", WEXITSTATUS(pid_status[i]));
-                    }
-                    fprintf(stderr, "\n");
-                }
-                
-                if(pipe_sign == 1)
-                {
-                    int fd[2];
-
-                    int retVals[2];
-
-                    if(pipe(fd) < 0)
-                    {
-                        fprintf(stderr, "Pipe could not be initiated\n");
-                    }
-
-                    // executePipeChain(head, 2);
-
-                    makePipe(&parse1, &parse2);
-
-                    waitpid(parse1.pid, &retVals[0], 0);
-                    waitpid(parse2.pid, &retVals[1], 0);
-
-                    fprintf(stderr, "+ completed %s [%i][%i]\n", cmd, WEXITSTATUS(retVals[0]), WEXITSTATUS(retVals[1]));
-                }
-                if(pipe_sign == 0)
-                {
-                    if (makeArgs(&args, cmd))
+                    if (makeArgs(head, head->cmdPtr))
                     {
                         /* Error Checking for processing arguments */
-                        printf("Error checking arguments\n");
                         continue;
                     }
 
                     /* Builtin command */
                     /* Exit */
-                    if (strcmp(args.args[0], "exit") == 0) {
+                    if (strcmp(head->args[0], "exit") == 0) {
                         fprintf(stderr, "Bye...\n");
                         retval = 0;
                         printCompletion(cmd, retval);
@@ -733,7 +606,7 @@ int main(void)
                     }
 
                     /* pwd */
-                    if (strcmp(args.args[0], "pwd") == 0)
+                    if (strcmp(head->args[0], "pwd") == 0)
                     {
                         char* cwd = (char*) malloc(PATH_MAX);
                         getcwd(cwd, PATH_MAX);
@@ -750,9 +623,9 @@ int main(void)
                         continue;
                     }
 
-                    if (strcmp(args.args[0], "cd") == 0)
+                    if (strcmp(head->args[0], "cd") == 0)
                     {
-                        retval = chdir(args.args[1]);
+                        retval = chdir(head->args[1]);
                         if (retval)
                         {
                             /* If cd returns an error */
@@ -780,20 +653,20 @@ int main(void)
                     if (pid == 0)
                     {
                         // Child
-                        if (args.redirect)
+                        if (head->redirect)
                         {
                             // printf("REDIRECTING\n");
                             int fd;
-                            if (args.isOutputAppend)
-                                fd = open(args.redirectFile, O_WRONLY | O_CREAT | O_APPEND, 0644);
+                            if (head->isOutputAppend)
+                                fd = open(head->redirectFile, O_WRONLY | O_CREAT | O_APPEND, 0644);
                             else
-                                fd = open(args.redirectFile, O_WRONLY | O_CREAT | O_TRUNC, 0644);   
+                                fd = open(head->redirectFile, O_WRONLY | O_CREAT | O_TRUNC, 0644);   
                             //0644 file permissions; readable by all the user groups, but writable by the user only
                             dup2(fd, STDOUT_FILENO);
                             close(fd);
                         }
 
-                        retval = execvp(args.args[0], args.args);
+                        retval = execvp(head->args[0], head->args);
                         fprintf(stderr, "Error: command not found\n");
                         
                         exit(retval);
@@ -801,7 +674,10 @@ int main(void)
                     else if (pid > 0)
                     {
                         // Parent
-                        waitpid(pid, &retval, 0);
+                        if (head->background)
+                            waitpid(pid, &retval, WNOHANG);
+                        else
+                            waitpid(pid, &retval, 0);
                         if (!WIFEXITED(retval))
                         {
                             printf("Error: child failed to exit\n");
@@ -815,7 +691,9 @@ int main(void)
                         exit(1);
                     }
 
-                    args.redirect = false;
+                    head->redirect = false;
+                    head->background = false;
+                    freeList(&head);
                     // /* Regular command */
                     // retval = system(cmd);
                     // fprintf(stdout, "Return status value for '%s': %d\n",
@@ -823,7 +701,7 @@ int main(void)
                 }
         }
 
-        freeArgParser(&args);
+        freeArgParser(head);
 
         return EXIT_SUCCESS;
 }
