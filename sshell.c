@@ -87,8 +87,6 @@ int scanArgs(struct argParser ** args, char* argsString)
     char* argcopy = (char*)malloc(CMDLINE_MAX + 1);
     strcpy (argcopy, argsString);
     char* token = strtok(argcopy, "|");
-
-    argParser* head = NULL;
     *args = NULL;
 
     int pipeCount = -1;
@@ -259,74 +257,95 @@ int main(void)
                 int numCmd = scanArgs(&head, cmd);
                 bool for_loop = true;
 
-                if(numCmd > 0 && !for_loop)
+                if(numCmd > 0 && for_loop)
                 {
                     printf("Number of commands:%d\n", numCmd);
-                    printf("Command1: %s\n", head->cmdPtr);
                     if(makeArgs(&parse1, head->cmdPtr))
                     {
-                        printf("Pass parse1\n");
                         continue;
                     }
-                    printf("Command2: %s\n", head->nextCmd->cmdPtr);
+                    printf("Command1: %s\n", parse1.args[0]);
                     if(makeArgs(&parse2, head->nextCmd->cmdPtr))
                     {
-                        printf("Pass parse2\n");
                         continue;
+                    }
+                    printf("Command2: %s\n", parse2.args[0]);
+                    if(numCmd == 2)
+                    {
+                        if(makeArgs(&args, head->nextCmd->nextCmd->cmdPtr))
+                        {
+                            continue;
+                        }
+                        printf("Command3: %s\n", args.args[0]);
                     }
                 }
 
-                if(numCmd > 0 && for_loop)
+                if(numCmd > 0 && numCmd == 2)
                 {
-                    int prev_pipe = STDIN_FILENO;
-                    int fd[2];
-                    for(int i = 0; i < numCmd; i++)
-                    {
-                        initArgParser(&parse1);
-                        if(makeArgs(&parse1, head->cmdPtr))
-                        {
-                            printf("problem with passing command\n");
-                            continue;
-                        }
-                        printf("Processing command: %s\n", parse1.args[1]);
-                        head = head->nextCmd;
-                        if( pipe(fd) < 0 )
-                        {
-                            fprintf(stderr, "Pipe could not be initiated\n");
-                        }
-                        if(fork()==0)
-                        {
-                            if( prev_pipe != STDIN_FILENO )
-                            {
-                                dup2(prev_pipe, STDIN_FILENO);
-                                close(prev_pipe);
-                            }
-                            dup2(fd[1], STDOUT_FILENO);
-                            close(fd[1]);
-                            retval = execvp(parse1.args[0], parse1.args);
-                            fprintf(stderr, "%s - cannot be executed\n", parse1.args[1]);
-                            exit(retval);
-                        }
-                        close(prev_pipe);
-                        close(fd[1]);
-                        prev_pipe = fd[0];
-                    }
+                    // parse1 = command1; parse2 = command2; args = command3;
 
-                    if(prev_pipe != STDIN_FILENO)
+                    int fd_1t2[2], fd_2t3[2];
+                    pipe(fd_1t2); pipe(fd_2t3);
+
+                    pid_t pid[3];
+                    int pid_status[3];
+                    for(int i = 0; i < 3; i++)
                     {
-                        dup2(prev_pipe, STDIN_FILENO);
-                        close(prev_pipe);
+                        pid_status[i] = 0;
                     }
-                    initArgParser(&parse1);
-                    if(makeArgs(&parse1, head->cmdPtr))
+                    
+                    pid[0] = fork();
+                    if(pid[0] == 0)         //child 1 for command 1 to command 2
                     {
-                        printf("problem with passing command\n");
-                        continue;
+                        dup2(fd_1t2[1], STDOUT_FILENO);
+                        for(int i = 0; i < 2; i++)
+                        {
+                            close(fd_1t2[i]);
+                            close(fd_2t3[i]);
+                        }
+                        pid_status[0] = execvp(parse1.args[0], parse1.args);
+                        fprintf(stderr, "Command1 not found\n");
+                        exit(0);
                     }
-                    printf("processing command: %s\n", parse1.args[0]);
-                    retval = execvp(parse1.args[0], parse1.args);
-                    while(i=0; i<)
-                    printCompletion(cmd, retval);
+                    pid[1] = fork();
+                    if(pid[1] == 0)     //child 2 for command 2 to 3
+                    {
+                        dup2(fd_1t2[0], STDIN_FILENO);         //command 2 reads from command 1
+                        dup2(fd_2t3[1], STDOUT_FILENO);        //command 2 writes to command 3
+                        for(int i = 0; i < 2; i++)
+                        {
+                            close(fd_1t2[i]);
+                            close(fd_2t3[i]);
+                        }
+                        pid_status[1] = execvp(parse2.args[0], parse2.args);
+                        fprintf(stderr, "Command2 not found\n");
+                        exit(0);
+                    }
+                    pid[2] = fork();
+                    if(pid[2] == 0)
+                    {
+                        dup2(fd_2t3[0], STDIN_FILENO);      //command3 reads from command 2
+                        for(int i = 0; i < 2; i++)
+                        {
+                            close(fd_1t2[i]);
+                            close(fd_2t3[i]);
+                        }
+                        pid_status[2] = execvp(args.args[0], args.args);
+                        fprintf(stderr, "Command3 not found\n");
+                        exit(0);
+                    }
+                    for(int i = 0; i < 2; i++)
+                    {
+                        close(fd_1t2[i]);
+                        close(fd_2t3[i]);
+                    }
+                    for(int i = 0; i < 3; i++)
+                    {
+                        int status;
+                        waitpid(pid[i], &status, 0);
+                        printf("Child %d exited with status [%d]\n", i, pid_status[i]);
+                    }
+                    printCompletion(cmd, pid_status[3]);
                 }
                 
                 if(numCmd > 0 && !for_loop)
@@ -356,7 +375,7 @@ int main(void)
                             exit(0);
                         }
                         fprintf(stderr, "Error: command not found\n");
-                        
+                    
                         exit(retval);
                     }
                     else
@@ -389,7 +408,7 @@ int main(void)
                         }
                     }
                 }
-                else
+                if(numCmd == 0)
                 {
                     if (makeArgs(&args, cmd))
                     {
