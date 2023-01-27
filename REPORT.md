@@ -47,10 +47,21 @@ For errors, we decided to ...
 ## Testing
 To verify the correctness of our program, we compared the output of our
 **sshell** with the reference shell as well as running all examples in the given
-project proposal. 
+project proposal. The provided tester script was also used to check our program is
+running correctly. During the writing of the program, everytime the new feature is added
+to the progra, we utilize `printf()` function in order to make sure that each function is 
+working as we intended it to work. Whenever we found error in the program, we examine 
+the potential problem closely by inserting `printf()` function at each individual line 
+in order to see the real cause of the error. 
 
 ## Limitations
 The `sshell` input is limited by a few assumptions.
 1. The maximum length of a command line never exceeds **512**
 2. A program has a maximum of **16** non-null arguments
 3. The maximum length of individual tokens doesn't exceed **32** characters
+
+## Reference
+1. http://www.microhowto.info/howto/reap_zombie_processes_using_a_sigchld_handler.html
+2. https://stackoverflow.com/questions/42840950/waitpid-and-fork-execs-non-blocking-advantage-over-a-syscall
+3. https://www.learn-c.org/en/Linked_lists
+4. https://www.unix.com/programming/155190-pipes-connecting-3-processes-circle.html
