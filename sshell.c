@@ -16,6 +16,7 @@ typedef struct argParser
     char* args[ARGS_MAX + 1];
     char* original;
     bool redirect;
+    bool isOutputAppend;
     char* redirectFile;
     char* cmdPtr;
 
@@ -36,6 +37,7 @@ void initArgParser(argParser* args)
     //     }
     }
     args->redirect = false;
+    args->isOutputAppend = false;
     args->redirectFile = (char*)malloc(TOKEN_MAX + 1);
 }
 
@@ -47,6 +49,7 @@ void freeArgParser(argParser* args)
             free(args->args[i]);
     }
     free(args->redirectFile);
+        
 }
 
 void print_list(struct argParser * head)
@@ -60,20 +63,21 @@ void print_list(struct argParser * head)
     }
 }
 
-//https://www.learn-c.org/en/Linked_lists
-void push(struct argParser ** head, char* argsString)
+// Referenced from https://www.learn-c.org/en/Linked_lists
+void push(struct argParser** head, char* argsString)
 {
+    /* Push to end of the list */
     struct argParser* new_node = malloc(sizeof(struct argParser));
     new_node->cmdPtr = argsString;
     new_node->nextCmd = NULL;
-
+    
     if(*head == NULL)
     {
         *head = new_node;
     }
     else
     {
-        struct argParser * end_node = *head;
+        struct argParser* end_node = *head;
         while(end_node->nextCmd != NULL)
         {
             end_node = end_node->nextCmd;
@@ -82,15 +86,13 @@ void push(struct argParser ** head, char* argsString)
     }
 }
 
-int scanArgs(struct argParser ** args, char* argsString)
+int scanArgs(struct argParser** args, char* argsString)
 {
     char* argcopy = (char*)malloc(CMDLINE_MAX + 1);
     strcpy (argcopy, argsString);
     char* token = strtok(argcopy, "|");
-    *args = NULL;
 
-    int pipeCount = -1;
-
+    int pipeCount = -1; // Offset of one to account for pipe instead of tokens
     while(token != NULL)
     {
         pipeCount++;
@@ -98,7 +100,26 @@ int scanArgs(struct argParser ** args, char* argsString)
         token = strtok(NULL, "|");
     }
     // print_list(args);
+    
     return pipeCount;
+}
+
+void checkOutputAppending(argParser* args, char* argString)
+{
+    char* outputAppendPosition = strstr(argString, ">>");
+    
+    if (outputAppendPosition == NULL)
+        /* Didn't find output appending */
+        return;
+    
+    *(outputAppendPosition++) = '\0';
+    *(outputAppendPosition++) = '\0';
+    
+    while (*outputAppendPosition == ' ')
+        outputAppendPosition++;
+    args->redirect = true;
+    args->isOutputAppend = true;
+    strcpy(args->redirectFile, outputAppendPosition);
 }
 
 int makeArgs(argParser* args, char* argsString)
@@ -108,6 +129,8 @@ int makeArgs(argParser* args, char* argsString)
     
     strcpy(argcopy, argsString);
 
+    checkOutputAppending(args, argcopy);
+
     // char* space;
     int i = 0;
 
@@ -115,7 +138,7 @@ int makeArgs(argParser* args, char* argsString)
 
     char* redirectChar;
     
-
+    
     while(token != NULL){
         // printf("Token: %s\n", token);
         redirectChar = strchr(token, '>');      // redirectChar = string after '>' from token
@@ -127,7 +150,6 @@ int makeArgs(argParser* args, char* argsString)
             if (strlen(token) == 1)
             {
                 /* Redirect char by itself*/
-                // printf("Char by itself\n");
                 fileName = strtok(NULL, " ");
                 strncpy(args->redirectFile, fileName, TOKEN_MAX);
                 token = strtok(NULL, " ");
@@ -137,14 +159,12 @@ int makeArgs(argParser* args, char* argsString)
             {
                 /* Redirect Char at end of word */
                 *redirectChar = '\0';
-                printf("Char at end of word\n");
                 fileName = strtok(NULL, " ");
                 strncpy(args->redirectFile, fileName, TOKEN_MAX);
             }
             else if (redirectChar == token)
             {
                 /* Redirect Char at beginning of word */
-                printf("Char at beginning of word\n");
                 token = token + 1;
                 strncpy(args->redirectFile, token, TOKEN_MAX);
                 token = strtok(NULL, " ");
@@ -153,7 +173,6 @@ int makeArgs(argParser* args, char* argsString)
             else 
             {
                 /* Redirect Char in middle of word */
-                printf("Char in middle of word\n");
                 *redirectChar = '\0';
                 redirectChar++;
                 // if (args->args[i] == NULL)
@@ -210,7 +229,7 @@ int makeArgs(argParser* args, char* argsString)
 
 void printCompletion(char* cmd, int retval)
 {
-    fprintf(stderr, "+ completed %s [%i]\n", cmd, retval);
+    fprintf(stderr, "+ completed '%s' [%i]\n", cmd, retval);
 }
 
 int main(void)
@@ -229,7 +248,7 @@ int main(void)
         initArgParser(&parse2);
 
         while (1) {
-                char *nl;
+                char* nl;
                 int retval;
 
                 /* Print prompt */
@@ -252,30 +271,30 @@ int main(void)
 
                 args.original = cmd;
 
-                struct argParser * head = NULL;
-
+                struct argParser* head = NULL;
                 int pipe_sign = scanArgs(&head, cmd);
 
                 if(pipe_sign > 0)
                 {
-                    printf("Number of commands:%d\n", pipe_sign);
+                    // printf("Number of commands:%d\n", pipe_sign);
                     if(makeArgs(&parse1, head->cmdPtr))
                     {
+                        /*Error checking*/
                         continue;
                     }
-                    printf("Command1: %s\n", parse1.args[0]);
+                    // printf("Command1: %s\n", parse1.args[0]);
                     if(makeArgs(&parse2, head->nextCmd->cmdPtr))
                     {
                         continue;
                     }
-                    printf("Command2: %s\n", parse2.args[0]);
+                    // printf("Command2: %s\n", parse2.args[0]);
                     if(pipe_sign == 2)
                     {
                         if(makeArgs(&args, head->nextCmd->nextCmd->cmdPtr))
                         {
                             continue;
                         }
-                        printf("Command3: %s\n", args.args[0]);
+                        // printf("Command3: %s\n", args.args[0]);
                     }
                 }
 
@@ -294,15 +313,16 @@ int main(void)
                     }
                     
                     pid[0] = fork();
-                    if(pid[0] == 0)         //child 1 for command 1 to command 2
+                    if(pid[0] == 0)
                     {
+                        /* Child 1 for command 1 to command 2 */
                         dup2(fd_1t2[1], STDOUT_FILENO);
                         for(int i = 0; i < 2; i++)
                         {
                             close(fd_1t2[i]);
                             close(fd_2t3[i]);
                         }
-                        pid_status[0] = execvp(parse1.args[0], parse1.args);
+                        execvp(parse1.args[0], parse1.args);
                         fprintf(stderr, "Command1 not found\n");
                         exit(0);
                     }
@@ -316,7 +336,7 @@ int main(void)
                             close(fd_1t2[i]);
                             close(fd_2t3[i]);
                         }
-                        pid_status[1] = execvp(parse2.args[0], parse2.args);
+                        execvp(parse2.args[0], parse2.args);
                         fprintf(stderr, "Command2 not found\n");
                         exit(0);
                     }
@@ -329,7 +349,7 @@ int main(void)
                             close(fd_1t2[i]);
                             close(fd_2t3[i]);
                         }
-                        pid_status[2] = execvp(args.args[0], args.args);
+                        execvp(args.args[0], args.args);
                         fprintf(stderr, "Command3 not found\n");
                         exit(0);
                     }
@@ -338,13 +358,32 @@ int main(void)
                         close(fd_1t2[i]);
                         close(fd_2t3[i]);
                     }
-                    for(int i = 0; i < 3; i++)
+                    
+                    for (int i = 0; i < pipe_sign + 1; i++)
                     {
-                        int status;
-                        waitpid(pid[i], &status, 0);
-                        printf("Child %d exited with status [%d]\n", i, status);
+                        waitpid(pid[i], &pid_status[i], 0);
                     }
-                    fprintf(stderr, "+ completed %s [%i][%i][%i]\n", cmd, pid_status[0], pid_status[1], pid_status[2]);
+                    // bool isChildSuccess = true;
+                    // for (int i = 0; i < pipe_sign + 1; i++)
+                    // {
+                    //     if (!WIFEXITED(pid_status[i]))
+                    //     {
+                    //         /* Child exited unsuccessfully */
+                    //         fprintf(stderr, "Child[%d] exited unsuccessful\n", i);
+                    //         isChildSuccess = false;
+                    //     }
+                    // }
+                    
+                    // if (!isChildSuccess)
+                    //     continue;
+                        
+
+                    fprintf(stderr, "+ completed '%s' ", cmd);
+                    for (int i = 0; i < pipe_sign + 1; i++)
+                    {
+                        fprintf(stderr, "[%i]", WEXITSTATUS(pid_status[i]));
+                    }
+                    fprintf(stderr, "\n");
                 }
                 
                 if(pipe_sign == 1)
@@ -453,12 +492,13 @@ int main(void)
                     }
                     
 
-                    //Checking the code / Debugging 
+                    // Checking the code / Debugging 
                     // printf("Display args\n============\n");
-                    // while(args.args[args.num])
+                    // int i = 0;
+                    // while(args.args[i] != NULL)
                     // {
-                    //     printf("Args[%i] = %s\n", args.num, args.args[args.num]);
-                    //     args.num++;
+                    //     printf("Args[%i] = %s\n", i, args.args[i]);
+                    //     i++;
                     // }
                     // printf("File Name: %s\n", args.redirectFile);
                     // printf("====================\n");
@@ -471,7 +511,11 @@ int main(void)
                         if (args.redirect)
                         {
                             // printf("REDIRECTING\n");
-                            int fd = open(args.redirectFile, O_WRONLY | O_CREAT | O_TRUNC, 0644);   
+                            int fd;
+                            if (args.isOutputAppend)
+                                fd = open(args.redirectFile, O_WRONLY | O_CREAT | O_APPEND, 0644);
+                            else
+                                fd = open(args.redirectFile, O_WRONLY | O_CREAT | O_TRUNC, 0644);   
                             //0644 file permissions; readable by all the user groups, but writable by the user only
                             dup2(fd, STDOUT_FILENO);
                             close(fd);
@@ -491,7 +535,7 @@ int main(void)
                             printf("Error: child failed to exit\n");
                         }
                         // fprintf(stderr, "+ completed %s [%i]\n", cmd, retval);
-                        printCompletion(cmd, retval);
+                        printCompletion(cmd, WEXITSTATUS(retval));
                     }
                     else
                     {
