@@ -342,70 +342,66 @@ int main(void)
                     {
                         int status;
                         waitpid(pid[i], &status, 0);
-                        printf("Child %d exited with status [%d]\n", i, pid_status[i]);
+                        printf("Child %d exited with status [%d]\n", i, status);
                     }
-                    printCompletion(cmd, pid_status[0]);
+                    fprintf(stderr, "+ completed %s [%i][%i][%i]\n", cmd, pid_status[0], pid_status[1], pid_status[2]);
                 }
                 
                 if(pipe_sign == 1)
                 {
                     int fd[2];
+
+                    int p1_status = 0;
+                    int p2_status = 0;
+
                     if(pipe(fd) < 0)
                     {
                         fprintf(stderr, "Pipe could not be initiated\n");
                     }
 
-                    pid_t p1, p2;
-                    p1 = fork();
-                    if(p1 < 0 )
+                    pid_t pid[2];
+                    pid[0] = fork();
+                    if(pid[0] < 0 )
                     {
                         printf("child 1 fork failed\n");
                     }
 
-                    if( p1 == 0 )
+                    if( pid[0] == 0 )
                     {
                         close(fd[0]);
                         dup2(fd[1], STDOUT_FILENO);
                         close(fd[1]);
-                        retval = execvp(parse1.args[0], parse1.args);
-                        if(retval < 0 )
-                        {
-                            printf("execvp failed \n");
-                            exit(0);
-                        }
+                        p1_status = execvp(parse1.args[0], parse1.args);
                         fprintf(stderr, "Error: command not found\n");
                     
-                        exit(retval);
+                        exit(0);
                     }
-                    else
+                    pid[1] = fork();
+                    if(pid[1] < 0)
                     {
-                        p2 = fork();
-                        if(p2 < 0)
-                        {
-                            printf("child 2 fork failed\n");
-                        }
-                        if(p2 == 0)
-                        {
-                            close(fd[1]);
-                            dup2(fd[0], STDIN_FILENO);
-                            close(fd[0]);
-                            retval = execvp(parse2.args[0], parse2.args);
-                            if(retval < 0)
-                            {
-                                printf("execvp 2 failed\n");
-                                exit(0);
-                            }
-                            fprintf(stderr, "Error: command 2 not found\n");
-
-                            exit(retval);
-                        }
-                        else
-                        {
-                            wait(NULL);
-                            wait(NULL);
-                            printCompletion(cmd, retval);
-                        }
+                        printf("child 2 fork failed\n");
                     }
+                    if(pid[1] == 0)
+                    {
+                        close(fd[1]);
+                        dup2(fd[0], STDIN_FILENO);
+                        close(fd[0]);
+                        p2_status = execvp(parse2.args[0], parse2.args);
+                        fprintf(stderr, "Error: command 2 not found\n");
+
+                        exit(0);
+                    }
+
+                    close(fd[0]);
+                    close(fd[1]);
+
+                    for(int i = 0; i < 2; i++)
+                    {
+                        int status;
+                        waitpid(pid[i], &status, 0);
+                        printf("Child %d exited with status [%d]\n", i, status);
+                    }
+                    fprintf(stderr, "+ completed %s [%i][%i]\n", cmd, p1_status, p2_status);
                 }
                 if(pipe_sign == 0)
                 {
@@ -420,6 +416,8 @@ int main(void)
                     /* Exit */
                     if (strcmp(args.args[0], "exit") == 0) {
                         fprintf(stderr, "Bye...\n");
+                        retval = 0;
+                        printCompletion(cmd, retval);
                         break;
                     }
 
