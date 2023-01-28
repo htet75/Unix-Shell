@@ -195,6 +195,8 @@ bool isWordOnlySpaces(char* str)
 
 int scanArgs(struct argParser** args, char* argsString)
 {
+    /* Going through every character in argsString and check if '|' exists*/
+    /* keep counts of the number of the symbol '|' and number of comments*/
     char* argcopy = (char*)malloc(CMDLINE_MAX + 1);
     strcpy (argcopy, argsString);
     
@@ -269,15 +271,11 @@ int checkRedirect(struct redirectInfo* redirectinfo, char* cmd)
             return -1;
         }
     }
-
-
-
     return 0;
 }
 
 int checkOutputAppending(struct redirectInfo* redirectinfo, char* argString)
 {
-
     char* outputAppendPosition = strstr(argString, ">>");
     if (outputAppendPosition == NULL)
         /* Didn't find output appending */
@@ -307,6 +305,7 @@ int checkOutputAppending(struct redirectInfo* redirectinfo, char* argString)
 
 int checkBackground(struct redirectInfo* redirectionInfo, char* argsString)
 {
+    /* check for '&' in the command and update the status of the child processs accordingly*/
     char* backgroundChar = strchr(argsString, '&');
     
     if(backgroundChar != NULL)
