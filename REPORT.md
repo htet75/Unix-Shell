@@ -57,7 +57,9 @@ redirection inside the `redirectFile` string.
 In order to implement the background jobs, we first go through input and check 
 if there exists the symbol (`&`). If it does, we then checks if the symbol is 
 the last input of the respective command. We then use `waitpid` function with 
-option flag `WNOHANG` on the respective child process. 
+option flag `WNOHANG` on the respective child process. We then continuously 
+monitor the return value of `waitpid` to check if the child process running in 
+the background has terminated.
 
 ### Error Management
 For error management, aside from library function failures, we ensures to 
@@ -78,13 +80,15 @@ properly by catching errors.
 
 ## Testing
 To verify the correctness of our program, we compared the output of our
-**sshell** with the reference shell as well as running all examples in the given
+`sshell` with the reference shell as well as running all examples in the given
 project proposal. The provided tester script was also used to check our program is
 running correctly. During the writing of the program, everytime the new feature is added
 to the progra, we utilize `printf()` function in order to make sure that each function is 
 working as we intended it to work. Whenever we found error in the program, we examine 
 the potential problem closely by inserting `printf()` function at each individual line 
-in order to see the real cause of the error. 
+in order to see the real cause of the error. During the process of managing errors
+in the program, we also tested the program with potential inputs that can break 
+the program and prevent them accordingly. 
 
 ## Limitations
 The `sshell` input is limited by a few assumptions.
