@@ -5,6 +5,8 @@ This project is a simple shell called **sshell** implemented using system calls
 to execute inputs from the command line.
 
 ## Implementation
+
+### Data Structure
 Initially the `sshell` input is processed into a data structure called 
 `struct argParser` which parses the initial input. This data structure is a list
 containning information relating to the arguments such as the commands and their
@@ -15,6 +17,7 @@ of all the child processes that are concurrently running in the background. We
 also used all three of these data structures as linked list in order to allow 
 dynamic background jobs and parsing. 
 
+### Processing the Inputs
 In order to process the `sshell` input, we separate the given arguments into tokens 
 using `strtok()` and space character (` `) as the delimiter. Theses arguments are 
 then stored inside the array `args[]`. We process the tokens and add them into
@@ -26,6 +29,7 @@ it to the branch out our program into two paths. If there is no (`|`), then the
 the program will execute the built-in command or one command. Otherwise, the 
 program dynamically runs multiple commands from the provided input. 
 
+### Main Function
 For built-in commands, we looked at the first argument in the array and compared
 it to our various keywords such as `exit`, `cd`, and `pwd`.
 The exception to this is when pipes (`|`), output
@@ -55,6 +59,7 @@ if there exists the symbol (`&`). If it does, we then checks if the symbol is
 the last input of the respective command. We then use `waitpid` function with 
 option flag `WNOHANG` on the respective child process. 
 
+### Error Management
 For error management, aside from library function failures, we ensures to 
 initiate and free the three data structures anywhere that is necessary throughout
 the program. The first thing we check from the input to our program is whether
