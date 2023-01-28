@@ -11,21 +11,21 @@ containning information relating to the arguments such as the commands and their
 arguments. There is another data structure called `struct redirectInfo` which also 
 processes the input and extracts information relating to recirecting and ouput
 appending. The third data structure called `struct job` store the information
-of all the child processes that are concurrently running in the background. 
+of all the child processes that are concurrently running in the background. We
+also used all three of these data structures as linked list in order to allow 
+dynamic background jobs and parsing. 
 
-In order to process the `sshell` input, we separate the given arguments using 
-`strtok()` and space character (` `) as the delimiter. Theses arguments are then 
-stored inside the array `args[]`. 
+In order to process the `sshell` input, we separate the given arguments into tokens 
+using `strtok()` and space character (` `) as the delimiter. Theses arguments are 
+then stored inside the array `args[]`. We process the tokens and add them into
+the argParser's args array where it can be used by `execvp` system call. We chose
+to use `execvp` in order to run our commands because its ability to automatically
+find programs in our `$PATH` while having a dynamic array of arguments to pass to 
+the proram.We also keeps the count of (`|`) that exist inside the input and uses
+it to the branch out our program into two paths. If there is no (`|`), then the 
+the program will execute the built-in command or one command. Otherwise, the 
+program dynamically runs multiple commands from the provided input. 
 
-
-First, we have the argument array `args[]` which contains the given values of
-the input separated by spaces. We separate the given arguments using strtok
-using the delimiter to be the space character(' '). We process the tokens and
-add them into the argParser's args array where it can be used by `execvp` system
-call. We also keeps the count of (`|`) that exist inside the input. 
-We chose to use `execvp` in order to run our commands due to the ability to
-automatically find programs in our `$PATH` while having a dynamic array of
-arguments to pass to the program. 
 For built-in commands, we looked at the first argument in the array and compared
 it to our various keywords such as `exit`, `cd`, and `pwd`.
 The exception to this is when pipes (`|`), output
@@ -35,24 +35,41 @@ We use `makeArgs` function in order to look at each command, rid of space and
 (`&`). The arguments from the command are also put inside the array. 
 For pipes, we process the argParser as a linked list so the we can break down
 the commands into individual processes. Based on the number of pipe symbol, we 
-first fork one child process for each command. The piping commands can be 
+first fork one child process for each command. The piping commands are
 executed dynamically with the for loop. Inside the loop the first child process 
 will connect the output of the first command to the input of the second command. 
 The second child process will connect the input of second command to output of 
 the first command and the output of second command to the input of third command. 
 Lastly, the third child will connect the input of the last command to the output 
 of the second command. This allows us to dynamically increase the number of pipe 
-commands as we demands. The function `executePipeChain` uses the for loop and if 
-statement to identify the child and run the appropriate command with `executeParser`. 
-The function `makePipe` is used for two commands pipelining. 
+commands as we demands. The function `executePipeChain` uses the `for loop` and 
+`if statement` to identify the child and run the appropriate command with 
+`executeParser`. The function `makePipe` is used for two commands pipelining. 
 For output redirection (`>`) and appending (`>>`), we detect if the command line
 uses output redirection while parsing the arguments and use booleans `redirect`
 and `isOutputAppend` to mark respectively whether or not we need to redirect the
 output and if we append to the file. We recorded the file location of the
 redirection inside the `redirectFile` string.
+In order to implement the background jobs, we first go through input and check 
+if there exists the symbol (`&`). If it does, we then checks if the symbol is 
+the last input of the respective command. We then use `waitpid` function with 
+option flag `WNOHANG` on the respective child process. 
 
-
-For errors, we decided to ...
+For error management, aside from library function failures, we ensures to 
+initiate and free the three data structures anywhere that is necessary throughout
+the program. The first thing we check from the input to our program is whether
+the input is pipe or not, using `scanArgs` function. After checking for existance
+of multiple commands inside the input, we check whether each command is valid 
+using `makeArgs` function where the commands are broken up into token and each 
+individual tokens are checked for valid command, arguments and optional flags. 
+We then proceed to execute the commands. During the executions of the commands,
+we carefully check if the child process is needed or not and if they are needed, 
+we check if they are forked and closed successfully. In order to simplify 
+potential errors, we put the execution of the command inside a function and 
+implementated a loop. During the process of piping, we also ensure to close 
+all the unnecessary file descriptor at every instance. After the child processes 
+have finished executing the commands, we also checked the child processes exit
+properly by catching errors. 
 
 ## Testing
 To verify the correctness of our program, we compared the output of our
