@@ -20,7 +20,7 @@ such as output redirection/appending, and background processes and stores all
 the information in a convenient place.
 
 The third data structure called `struct job` stores a linked list of all the
-child processes that are running concurrently running in the background. A
+child processes that are concurrently running in the background. A
 linked list was once again chosen for its dynamic nature since we don't know how
 many background jobs will be processing at a given time.
 
@@ -34,7 +34,7 @@ because its ability to automatically find programs in our `$PATH` while having a
 dynamic array of arguments to pass to the program through user input. We have a
 major branch splitting in the main loop of our code, one for standard operation
 with no pipes, and another for pipes. We do this by keeping count of (`|`) that
-exist inside the input and uses it to the branch out our program into two paths.
+exist inside the input and uses it to branch out our program into two paths.
 If there is no (`|`), then the program will execute the built-in command or
 regular standard commands. Otherwise, the program dynamically runs multiple
 commands from the provided input. 
@@ -47,10 +47,10 @@ used, in which case, they are removed from `args[]` and processed independently.
 We use `makeArgs` function in order to look at each command, rid of spaces and
 split the string into arrays.
 The output appendment and redirection (`>>`, `>`) are removed from the input
-through using the `checkRedirect()` and `checkOutputAppending()` functions which
+through using the `checkRedirect()` and `checkOutputAppending()`, functions which
 both determine whether the user wants to output redirect/append and checks for
 errors. We detect if the command line uses output redirection while parsing the
-arguments and use booleans `redirect`and `isOutputAppend` so we can later
+arguments and use booleans `redirect` and `isOutputAppend` so we can later
 determine whether to append to the file. We recorded the file location of the
 redirection inside the `redirectFile` string.
 The `checkBackground()` function behaves similarly to the previously mentioned
@@ -60,8 +60,8 @@ individual `argParser` objects in the list. We broke down the commands into
 individual processes. Based on the number of pipe symbol, we first fork one
 child process for each command. The piping commands are executed dynamically
 with the for loop. Inside the loop the first child process will connect the
-output of the first command to the input of the second command. The middle children
-processes will connect the input of second command to output of the first command
+output of the first command to the input of the second command. The middle child
+process will connect the input of second command to output of the first command
 and the output of second command to the input of third command. Lastly, the
 third child will connect the input of the last command to the output of the
 second command. This allows us to dynamically increase the number of pipe
@@ -71,9 +71,9 @@ commands as we demands. The function `executePipeChain` uses the `for loop` and
 In order to implement the background jobs, we first go through input and check
 if there exists the symbol (`&`). If it does, we then checks if the symbol is
 the last input of the respective command. We then use `waitpid` function with
-option flag `WNOHANG` on the respective child process. We then continuously
-monitor the return value of `waitpid` to check if the child process running in
-the background has terminated.
+option flag `WNOHANG` on the respective child process allowing it to run in the 
+back ground. We then continuously monitor the return value of `waitpid` to check 
+if the child process running in the background has terminated.
 
 ### Error Management
 For error management, aside from library function failures, we make sure to
