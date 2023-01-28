@@ -34,6 +34,7 @@ typedef struct redirectInfo
     bool redirect;
     bool isOutputAppend;
     bool background;
+
 } redirectInfo;
 
 typedef struct job
@@ -42,6 +43,7 @@ typedef struct job
     struct job *next;
     char *command;
     pid_t pid;
+
 } job;
 
 void executeParser(argParser* parser)
@@ -223,7 +225,6 @@ int scanArgs(struct argParser** args, char* argsString)
         }
         token = strtok(NULL, "|");
     }
-    // print_list(args);
     if (pipeCharCount != pipeCount)
     {
         fprintf(stderr, "Error: missing command\n");
@@ -271,7 +272,7 @@ int checkRedirect(struct redirectInfo* redirectinfo, char* cmd)
             return -1;
         }
     }
-    return 0;
+    return EXIT_SUCCESS;
 }
 
 int checkOutputAppending(struct redirectInfo* redirectinfo, char* argString)
@@ -279,7 +280,7 @@ int checkOutputAppending(struct redirectInfo* redirectinfo, char* argString)
     char* outputAppendPosition = strstr(argString, ">>");
     if (outputAppendPosition == NULL)
         /* Didn't find output appending */
-        return 0;
+        return EXIT_SUCCESS;
     
     *(outputAppendPosition++) = '\0';
     *(outputAppendPosition++) = '\0';
@@ -300,7 +301,7 @@ int checkOutputAppending(struct redirectInfo* redirectinfo, char* argString)
     redirectinfo->isOutputAppend = true;
     strcpy(redirectinfo->redirectFile, outputAppendPosition);
 
-    return 0;
+    return EXIT_SUCCESS;
 }
 
 int checkBackground(struct redirectInfo* redirectionInfo, char* argsString)
@@ -324,7 +325,7 @@ int checkBackground(struct redirectInfo* redirectionInfo, char* argsString)
         redirectionInfo->background = true;
     }
 
-    return 0;
+    return EXIT_SUCCESS;
 }
 
 int makeArgs(argParser* args, char* argsString)
@@ -367,7 +368,7 @@ int makeArgs(argParser* args, char* argsString)
 
     free(argcopy);
 
-    return 0;
+    return EXIT_SUCCESS;
 }
 
 int findIndexOfPID(pid_t pidOfInterest , pid_t pids[], int numOfElements)
@@ -617,7 +618,7 @@ int main(void)
                         }
                         printCompletion(cmd, retval);
                         if (joblist == NULL)
-                            exit(0);
+                            exit(EXIT_SUCCESS);
                         continue;
                     }
 
