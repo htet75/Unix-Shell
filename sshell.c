@@ -46,6 +46,8 @@ typedef struct job
 
 } job;
 
+job* joblist = NULL; // Global job list
+
 void executeParser(argParser* parser)
 {
     execvp(parser->args[0], parser->args);
@@ -416,7 +418,7 @@ void freeList(argParser** head)
     }
 }
 
-void pushJob(job** jobhead, pid_t pid, char* command)
+void pushJob(pid_t pid, char* command)
 {
     job* newJob = (job*)malloc(sizeof(job));
     newJob->next = NULL;
@@ -424,14 +426,14 @@ void pushJob(job** jobhead, pid_t pid, char* command)
     newJob->command = (char*)malloc(sizeof(char) * TOKEN_MAX);
     strcpy(newJob->command, command);
 
-    if (*jobhead == NULL)
+    if (joblist == NULL)
     {
-        *jobhead = newJob;
+        joblist = newJob;
     }
     else
     {
         // Add new job to the back of the list
-        job* endJob = *jobhead;
+        job* endJob = joblist;
         while(endJob->next != NULL)
         {
             endJob = endJob->next;
@@ -440,20 +442,22 @@ void pushJob(job** jobhead, pid_t pid, char* command)
     }
 }
 
-void freeJob(job** jobhead, pid_t pid)
+void freeJob(pid_t pid)
 {
     /* Remove the specific pid job from the list */
-    job* previousJob = *jobhead;
-    job* currentJob = *jobhead;
+    job* previousJob = joblist;
+    job* currentJob = joblist;
+	printf("Joblist: %p\n", joblist);
     while(currentJob != NULL)
     {
         if(currentJob->pid == pid)
         {
-            if(currentJob == *jobhead)
+            if(currentJob == joblist)
             {
-                *jobhead = (*jobhead)->next;
+                joblist = NULL;
                 free(currentJob->command);
                 free(currentJob);
+				
                 break;
             }
             else
@@ -472,13 +476,14 @@ void freeJob(job** jobhead, pid_t pid)
     }
 }
 
-void printBackgroundProcess(job** joblist)
+void printBackgroundProcess()
 {
     /* 
     Specific print function to check the background processes and output the values
        if finished
     */
-    job* currentJob = *joblist;
+    job* currentJob = joblist;
+
     while (currentJob != NULL)
     {
         int returnValue;
@@ -486,9 +491,13 @@ void printBackgroundProcess(job** joblist)
         if (pid == currentJob->pid)
         {
             printCompletion(currentJob->command, WEXITSTATUS(returnValue));
-            freeJob(joblist, currentJob->pid);
+            freeJob(currentJob->pid);
+			currentJob = joblist;
         }
-        currentJob = currentJob->next;
+		else
+		{
+			currentJob = currentJob->next;
+		}
     } 
 }
 
@@ -496,7 +505,7 @@ int main(void)
 {
         char cmd[CMDLINE_MAX];
 
-        job* joblist = NULL;
+        
 
         struct argParser* head = NULL;
         struct redirectInfo redirectionInfo;
@@ -652,7 +661,6 @@ int main(void)
                             retval = 1;
                             free(cwd);
                         }
-                        // fprintf(stderr, "+ completed %s [%i]\n", cmd, retval);
                         printCompletion(copyCmd, retval);
                     }
                     else if (strcmp(head->args[0], "cd") == 0)
@@ -705,15 +713,11 @@ int main(void)
                         {
                             // Parent
 
-                            // printJobList(joblist);
-
                             if (redirectionInfo.background)
                             {
                                 waitpid(pid, &retval, WNOHANG);
-                                pushJob(&joblist, pid, copyCmd);
+                                pushJob(pid, copyCmd);
                                 printBackgroundProcess(&joblist);
-                                
-                                // printf("Added to job list\n");
                             }
                             else
                             {
