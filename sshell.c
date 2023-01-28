@@ -623,6 +623,11 @@ int main(void)
                         if (joblist != NULL)
                         {
                             fprintf(stderr, "Error: active jobs still running\n");
+                            redirectionInfo.redirect = false;
+                            redirectionInfo.isOutputAppend = false;
+                            redirectionInfo.background = false;
+                            freeList(&head);
+                            head = NULL;
                         }
                         printCompletion(cmd, retval);
                         if (joblist == NULL)
