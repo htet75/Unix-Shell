@@ -68,7 +68,11 @@ void executePipeChain(argParser* head, int numPipeCommands, struct redirectInfo*
     int pipes[numPipeCommands - 1][PIPE_OUTPUT];
     for (int i = 0; i < numPipeCommands - 1; i++)
     {
-        pipe(pipes[i]);
+        if(pipe(pipes[i]) < 0)
+        {
+            fprintf(stderr, "Error: unable to make pipe\n");
+            exit(EXIT_FAILURE);
+        }
     }
 
     argParser* current = head;
@@ -510,7 +514,11 @@ int main(void)
                 fflush(stdout);
 
                 /* Get command line */
-                fgets(cmd, CMDLINE_MAX, stdin);
+                if (!fgets(cmd, CMDLINE_MAX, stdin))
+                {
+                    fprintf(stderr, "Error: fgets\n");
+                    exit(EXIT_FAILURE);
+                }
 
                 /* Print command line if stdin is not provided by terminal */
                 if (!isatty(STDIN_FILENO)) {
@@ -626,7 +634,11 @@ int main(void)
                     if (strcmp(head->args[0], "pwd") == 0)
                     {
                         char* cwd = (char*) malloc(PATH_MAX);
-                        getcwd(cwd, PATH_MAX);
+                        if(!getcwd(cwd, PATH_MAX))
+                        {
+                            fprintf(stderr, "Error: can't get current directory\n");
+                            exit(EXIT_FAILURE);
+                        }
 
                         printf("%s\n", cwd);
                         retval = 0;
